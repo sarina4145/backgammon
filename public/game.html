@@ -1,0 +1,1132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+    <title>3D Backgammon Pro</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { margin: 0; overflow: hidden; background: #1a1a1a; font-family: sans-serif; touch-action: none; -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
+        canvas { display: block; touch-action: none; }
+        #ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
+        .interactive { pointer-events: auto; }
+        #canvas-container { width: 100vw; height: 100vh; }
+        .dice-box { position: absolute; bottom: 20px; right: 20px; display: flex; gap: 10px; align-items: center; }
+        #dice-slots { display: flex; gap: 10px; }
+        .die { width: 60px; height: 60px; background: white; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 2rem; font-weight: bold; box-shadow: 0 4px 10px rgba(0,0,0,0.5); color: #333; box-sizing: border-box; border: 4px solid transparent; transition: all 0.2s; }
+        .die.used { opacity: 0.3; text-decoration: line-through; }
+        .die.active { color: #111; transform: scale(1.15); }
+        .turn-indicator { position: absolute; top: 20px; left: 50%; transform: translateX(-50%); padding: 10px 30px; border-radius: 50px; color: white; font-weight: bold; font-size: 1.2rem; transition: all 0.3s; }
+        .white-turn { background: #e0e0e0; color: #333; box-shadow: 0 0 15px #fff; }
+        .black-turn { background: #333; color: #fff; box-shadow: 0 0 15px #000; }
+        #message-box { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(0,0,0,0.8); color: white; padding: 20px 40px; border-radius: 10px; display: none; z-index: 100; }
+        #menu-overlay { position: fixed; inset: 0; z-index: 200; background: rgba(10,10,10,0.92); display: flex; align-items: center; justify-content: center; }
+        .menu-card { background: #2a2a2a; border: 1px solid #555; border-radius: 16px; padding: 36px 40px; text-align: center; color: white; max-width: 92vw; box-shadow: 0 10px 40px rgba(0,0,0,0.6); }
+        .menu-btn { display: block; width: 100%; margin-top: 14px; padding: 14px 20px; border-radius: 12px; background: #d97706; color: white; font-size: 1.15rem; font-weight: bold; cursor: pointer; border: none; transition: background 0.2s; }
+        .menu-btn:hover { background: #f59e0b; }
+        .menu-btn small { display: block; font-weight: normal; font-size: 0.75rem; opacity: 0.85; margin-top: 2px; }
+        @media (max-width: 640px) {
+            .die { width: 38px; height: 38px; font-size: 1.3rem; border-width: 3px; border-radius: 6px; }
+            .dice-box { right: 8px !important; bottom: 12px !important; gap: 6px !important; }
+            #dice-slots { gap: 6px; }
+            #roll-btn { padding: 6px 10px !important; font-size: 0.85rem; }
+            .turn-indicator { top: 10px !important; font-size: 0.95rem; padding: 6px 16px; white-space: nowrap; }
+            #score-box { top: 52px !important; left: 8px !important; padding: 6px 10px !important; font-size: 0.8rem; }
+            #menu-btn { bottom: auto !important; top: 10px !important; left: auto !important; right: 8px !important; padding: 4px 10px !important; font-size: 0.75rem !important; }
+            #bot-log { bottom: 64px !important; font-size: 0.9rem !important; padding: 4px 14px !important; }
+        }
+    </style>
+</head>
+<body>
+
+<div id="canvas-container"></div>
+
+<div id="menu-overlay">
+    <div class="menu-card" dir="rtl">
+        <h1 class="text-3xl font-bold mb-2">تخته نرد</h1>
+        <p class="opacity-80 mb-4">حالت بازی رو انتخاب کن</p>
+        <button id="mode-pvp" class="menu-btn">بازی دو نفره<small>Two players on the same device</small></button>
+        <button id="mode-bot" class="menu-btn">بازی با کامپیوتر<small>You play White, the computer plays Black</small></button>
+        <button id="mode-online" class="menu-btn">بازی آنلاین<small>Play a friend over the internet with a room code</small></button>
+    </div>
+
+    <div id="lobby-card" class="menu-card" dir="rtl" style="display:none; min-width: 300px;">
+        <h1 class="text-2xl font-bold mb-4">بازی آنلاین</h1>
+
+        <button id="create-room" class="menu-btn">ساخت اتاق<small>You play White</small></button>
+        <div id="room-code-box" style="display:none" class="mt-4">
+            <p class="opacity-80 text-sm">این کد رو برای دوستت بفرست:</p>
+            <div id="room-code" dir="ltr" class="text-4xl font-bold tracking-widest my-2 select-all" style="color:#fbbf24"></div>
+            <button id="copy-code" class="text-sm underline opacity-80">کپی کد</button>
+        </div>
+
+        <div class="my-5 opacity-50">— یا —</div>
+
+        <input id="join-code" dir="ltr" maxlength="5" placeholder="CODE" class="w-full text-center text-2xl tracking-widest font-bold rounded-lg p-2 text-black uppercase" autocomplete="off">
+        <button id="join-room" class="menu-btn">ورود به اتاق<small>You play Black</small></button>
+
+        <p id="lobby-status" class="mt-4 text-sm opacity-90 min-h-[1.5rem]"></p>
+        <button id="lobby-back" class="mt-2 text-sm underline opacity-70">بازگشت</button>
+    </div>
+</div>
+
+<div id="ui-layer">
+    <div id="turn-box" class="turn-indicator white-turn">White's Turn</div>
+
+    <div id="message-box"></div>
+    <div id="bot-log" class="absolute bottom-6 left-1/2 -translate-x-1/2 bg-black/70 text-white px-6 py-2 rounded-full text-lg" style="display:none"></div>
+
+    <div class="dice-box interactive">
+        <div id="dice-slots"></div>
+        <button id="roll-btn" class="bg-amber-600 hover:bg-amber-500 text-white px-6 py-2 rounded-lg font-bold shadow-lg transition">Roll Dice</button>
+    </div>
+
+    <button id="menu-btn" class="interactive absolute bottom-5 left-5 bg-black/60 hover:bg-black/80 text-white px-4 py-2 rounded-lg text-sm">Main Menu</button>
+
+    <div id="score-box" class="absolute top-5 left-5 text-white bg-black/50 p-4 rounded-lg">
+        <p>White: <span id="white-score">0</span></p>
+        <p>Black: <span id="black-score">0</span></p>
+    </div>
+</div>
+
+<script>
+/**
+ * BACKGAMMON 3D - VANILLA JS + THREE.JS
+ */
+
+// --- Audio Engine (Synthesized) ---
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+function playSound(type) {
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+
+    if (type === 'dice') {
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(150, audioCtx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(40, audioCtx.currentTime + 0.1);
+        gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
+    } else if (type === 'move') {
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(400, audioCtx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(200, audioCtx.currentTime + 0.2);
+        gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.2);
+    } else if (type === 'hit') {
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(100, audioCtx.currentTime);
+        gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
+    }
+    osc.start();
+    osc.stop(audioCtx.currentTime + 0.3);
+}
+
+// --- Game Logic Constants ---
+const WHITE = 1;
+const BLACK = -1;
+
+class BackgammonGame {
+    constructor() {
+        this.board = Array(24).fill(0).map(() => ({ count: 0, color: null }));
+        this.bar = { [WHITE]: 0, [BLACK]: 0 };
+        this.off = { [WHITE]: 0, [BLACK]: 0 };
+        this.turn = WHITE;
+        this.dice = [];
+        this.movesRemaining = [];
+        this.setupBoard();
+    }
+
+    setupBoard() {
+        // White moves 0 -> 23 (home = 18..23), Black moves 23 -> 0 (home = 0..5)
+        this.setPoint(0, 2, WHITE);
+        this.setPoint(11, 5, WHITE);
+        this.setPoint(16, 3, WHITE);
+        this.setPoint(18, 5, WHITE);
+
+        this.setPoint(23, 2, BLACK);
+        this.setPoint(12, 5, BLACK);
+        this.setPoint(7, 3, BLACK);
+        this.setPoint(5, 5, BLACK);
+    }
+
+    setPoint(idx, count, color) {
+        this.board[idx] = { count, color };
+    }
+
+    rollDice() {
+        const d1 = Math.floor(Math.random() * 6) + 1;
+        const d2 = Math.floor(Math.random() * 6) + 1;
+        this.dice = [d1, d2];
+        if (d1 === d2) {
+            this.movesRemaining = [d1, d1, d1, d1];
+        } else {
+            this.movesRemaining = [d1, d2];
+        }
+        return this.dice;
+    }
+
+    setDice(d1, d2) {
+        this.dice = [d1, d2];
+        this.movesRemaining = (d1 === d2) ? [d1, d1, d1, d1] : [d1, d2];
+    }
+
+    // All legal single-die moves from one source, each with the die that is used
+    getMovesFrom(fromIdx) {
+        const out = [];
+        if (this.movesRemaining.length === 0) return out;
+        const color = this.turn;
+
+        // If player has checkers on bar, they MUST move those first
+        if (this.bar[color] > 0 && fromIdx !== 'bar') return out;
+
+        let actualFrom = fromIdx;
+        if (fromIdx === 'bar') {
+            actualFrom = color === WHITE ? -1 : 24;
+        } else {
+            if (this.board[fromIdx].color !== color) return out;
+        }
+
+        const uniqueDice = [...new Set(this.movesRemaining)];
+
+        uniqueDice.forEach(die => {
+            const toIdx = actualFrom + (die * color);
+
+            // Check for bearing off
+            if (this.canBearOff(color)) {
+                const beyond = (color === WHITE && toIdx >= 24) || (color === BLACK && toIdx < 0);
+                if (beyond && !out.some(m => m.to === 'off')) {
+                    const dist = color === WHITE ? (24 - actualFrom) : (actualFrom + 1);
+                    const sorted = [...this.movesRemaining].sort((x, y) => x - y);
+                    out.push({ from: fromIdx, to: 'off', die: sorted.find(d => d >= dist) });
+                }
+            }
+
+            // Normal move
+            if (toIdx >= 0 && toIdx < 24) {
+                const target = this.board[toIdx];
+                if (!target.color || target.color === color || target.count === 1) {
+                    out.push({ from: fromIdx, to: toIdx, die: die });
+                }
+            }
+        });
+
+        return out;
+    }
+
+    getValidMoves(fromIdx) {
+        return this.getMovesFrom(fromIdx).map(m => m.to);
+    }
+
+    // Every legal move for the current player (used by the computer)
+    getAllMoves() {
+        if (this.bar[this.turn] > 0) return this.getMovesFrom('bar');
+        let all = [];
+        for (let i = 0; i < 24; i++) {
+            if (this.board[i].color === this.turn) all = all.concat(this.getMovesFrom(i));
+        }
+        return all;
+    }
+
+    hasAnyMove() {
+        if (this.movesRemaining.length === 0) return false;
+        if (this.bar[this.turn] > 0) return this.getValidMoves('bar').length > 0;
+        for (let i = 0; i < 24; i++) {
+            if (this.board[i].color === this.turn && this.getValidMoves(i).length > 0) return true;
+        }
+        return false;
+    }
+
+    canBearOff(color) {
+        if (this.bar[color] > 0) return false;
+        const start = color === WHITE ? 0 : 6;
+        const end = color === WHITE ? 17 : 23;
+        for (let i = start; i <= end; i++) {
+            if (this.board[i].color === color) return false;
+        }
+        return true;
+    }
+
+    executeMove(from, to, dieValue) {
+        const color = this.turn;
+
+        // Remove from source
+        if (from === 'bar') {
+            this.bar[color]--;
+        } else {
+            this.board[from].count--;
+            if (this.board[from].count === 0) this.board[from].color = null;
+        }
+
+        // Add to destination
+        if (to === 'off') {
+            this.off[color]++;
+        } else {
+            const target = this.board[to];
+            if (target.color && target.color !== color) {
+                // HIT!
+                this.bar[target.color]++;
+                target.count = 1;
+                target.color = color;
+                playSound('hit');
+            } else {
+                target.count++;
+                target.color = color;
+                playSound('move');
+            }
+        }
+
+        // Consume die
+        const index = this.movesRemaining.indexOf(dieValue);
+        if (index !== -1) this.movesRemaining.splice(index, 1);
+
+        if (this.movesRemaining.length === 0) {
+            this.turn = (this.turn === WHITE) ? BLACK : WHITE;
+        }
+    }
+}
+
+// --- Board Layout Mapping ---
+// Index 0..11  -> top row,    right to left  (0 = top right, 11 = top left)
+// Index 12..23 -> bottom row, left to right  (12 = bottom left, 23 = bottom right)
+function getPointLayout(i) {
+    const isTop = i < 12;
+    const col = isTop ? (11 - i) : (i - 12);          // 0..11 from left to right
+    const x = (col - 5.5) + (col < 6 ? -0.3 : 0.3);   // gap for the middle bar
+    const sign = isTop ? -1 : 1;                      // top = -z (far), bottom = +z (near)
+    return { x, sign, col, isTop };
+}
+
+// --- 3D Scene Setup ---
+let scene, camera, renderer, raycaster, mouse;
+let boardGroup, checkersGroup, highlightsGroup, botMarkGroup;
+const game = new BackgammonGame();
+
+const API_BASE = 'api';
+let onlineRoom = null;
+let onlineToken = null;
+let pollHandle = null;
+let pollingBusy = false;
+let lastServerState = null;
+
+async function apiRequest(endpoint, payload = {}) {
+    const response = await fetch(`${API_BASE}/${endpoint}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    });
+    const data = await response.json();
+    if (!response.ok || !data.success) {
+        throw new Error(data.message || 'خطا در ارتباط با سرور');
+    }
+    return data;
+}
+
+function onlineCredentials() {
+    return { room_code: onlineRoom, player_token: onlineToken };
+}
+
+function applyServerState(state, animateLocalMove = false) {
+    if (!state) return;
+    game.board = state.board.map(p => ({ count: Number(p.count), color: p.color === null ? null : Number(p.color) }));
+    game.bar = { [WHITE]: Number(state.bar[String(WHITE)] || 0), [BLACK]: Number(state.bar[String(BLACK)] || 0) };
+    game.off = { [WHITE]: Number(state.off[String(WHITE)] || 0), [BLACK]: Number(state.off[String(BLACK)] || 0) };
+    game.turn = Number(state.turn);
+    game.dice = Array.isArray(state.dice) ? [...state.dice] : [];
+    game.movesRemaining = Array.isArray(state.movesRemaining) ? [...state.movesRemaining] : [];
+    lastServerState = JSON.stringify(state);
+    clearHints();
+    updateBoard3D();
+    updateUI();
+}
+
+function stopOnlinePolling() {
+    if (pollHandle) clearInterval(pollHandle);
+    pollHandle = null;
+}
+
+async function pollOnlineState() {
+    if (!onlineRoom || !onlineToken || pollingBusy) return;
+    pollingBusy = true;
+    try {
+        const data = await apiRequest('game/state', onlineCredentials());
+        if (data.status === 'playing' && !onlineStarted) {
+            setLobbyStatus('حریف وصل شد؛ بازی شروع شد.');
+            onlineStarted = true;
+            startGame('online');
+        }
+        const serialized = JSON.stringify(data.state);
+        if (serialized !== lastServerState) {
+            applyServerState(data.state);
+        }
+        if (data.status === 'finished') stopOnlinePolling();
+    } catch (error) {
+        setLobbyStatus(error.message);
+    } finally {
+        pollingBusy = false;
+    }
+}
+
+function startOnlinePolling() {
+    stopOnlinePolling();
+    pollOnlineState();
+    pollHandle = setInterval(pollOnlineState, 900);
+}
+
+async function submitOnlineRoll() {
+    if (awaitingDice) return;
+    awaitingDice = true;
+    updateUI();
+    try {
+        const data = await apiRequest('game/roll', onlineCredentials());
+        playSound('dice');
+        applyServerState(data.state);
+        checkNoMoves();
+    } catch (error) {
+        showMessage(error.message);
+    } finally {
+        awaitingDice = false;
+        updateUI();
+    }
+}
+
+async function submitOnlineMove(from, to, die) {
+    if (awaitingDice) return;
+    awaitingDice = true;
+    updateUI();
+    try {
+        const data = await apiRequest('game/move', {
+            ...onlineCredentials(), from, to, die
+        });
+        // The server accepts the move first. Then the 3D client animates it.
+        playMove(from, to, die);
+        applyServerState(data.state);
+    } catch (error) {
+        showMessage(error.message);
+        await pollOnlineState();
+    } finally {
+        awaitingDice = false;
+        updateUI();
+    }
+}
+
+
+const TRAY_X = 7.3;     // x of the checker trays (right side of the board, like the reference picture)
+const TRAY_CX = 0.7;    // centre of the whole board incl. trays
+let flipView = false;   // online guest plays Black: view the board from the other side
+
+function fitCamera() {
+    // Straight top-down view that fits the whole board on any screen size
+    const aspect = window.innerWidth / window.innerHeight;
+    const t = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
+    const hVertical = 6.4 / t;
+    const hHorizontal = 8.2 / (t * aspect);
+    const h = Math.max(hVertical, hHorizontal);
+
+    camera.up.set(0, 0, flipView ? 1 : -1);        // screen "up" = far side of the board
+    camera.position.set(TRAY_CX, h, 0);
+    camera.lookAt(TRAY_CX, 0, 0);
+}
+
+function init3D() {
+    scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x222222);
+
+    camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+
+    renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    document.getElementById('canvas-container').appendChild(renderer.domElement);
+
+    scene.add(new THREE.AmbientLight(0xffffff, 0.7));
+    const spotLight = new THREE.SpotLight(0xffffff, 0.8);
+    spotLight.position.set(0, 25, 5);
+    scene.add(spotLight);
+
+    boardGroup = new THREE.Group();
+    checkersGroup = new THREE.Group();
+    highlightsGroup = new THREE.Group();
+    botMarkGroup = new THREE.Group();
+    scene.add(boardGroup, checkersGroup, highlightsGroup, botMarkGroup);
+
+    fitCamera();
+    createBoardMesh();
+    updateBoard3D();
+
+    raycaster = new THREE.Raycaster();
+    mouse = new THREE.Vector2();
+
+    // Pointer events work for mouse AND touch (the old window 'click' did not fire reliably on phones)
+    const el = renderer.domElement;
+    el.style.touchAction = 'none';
+    let downPos = null;
+    el.addEventListener('pointerdown', (e) => { downPos = { x: e.clientX, y: e.clientY }; });
+    el.addEventListener('pointerup', (e) => {
+        if (!downPos) return;
+        const moved = Math.hypot(e.clientX - downPos.x, e.clientY - downPos.y);
+        downPos = null;
+        if (moved < 14) handleTap(e.clientX, e.clientY);
+    });
+    el.addEventListener('pointercancel', () => { downPos = null; });
+    window.addEventListener('resize', onWindowResize);
+}
+
+function createBoardMesh() {
+    // Base Table
+    const tableMat = new THREE.MeshPhongMaterial({ color: 0x4d2600 });
+    const table = new THREE.Mesh(new THREE.BoxGeometry(15.4, 0.5, 10), tableMat);
+    table.position.x = TRAY_CX;
+    boardGroup.add(table);
+
+    // Two trays on the right: top = Black's, bottom = White's (same as the reference picture)
+    const trayMat = new THREE.MeshPhongMaterial({ color: 0x2b1400 });
+    [-1, 1].forEach(sg => {
+        const tray = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.04, 4.25), trayMat);
+        tray.position.set(TRAY_X, 0.27, sg * 2.4);
+        boardGroup.add(tray);
+    });
+
+    // Inner Cloth (Green)
+    const cloth = new THREE.Mesh(
+        new THREE.PlaneGeometry(13, 9),
+        new THREE.MeshPhongMaterial({ color: 0x1a4d1a })
+    );
+    cloth.rotation.x = -Math.PI / 2;
+    cloth.position.y = 0.26;
+    boardGroup.add(cloth);
+
+    // Middle Bar (flat, so checkers can sit on it)
+    const bar = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.06, 9), tableMat);
+    bar.position.y = 0.29;
+    boardGroup.add(bar);
+
+    // Points (Triangles)
+    for (let i = 0; i < 24; i++) {
+        const { x, sign, col, isTop } = getPointLayout(i);
+        const baseZ = sign * 4.45;
+        const apexZ = sign * 0.45;
+
+        const vertices = new Float32Array([
+            x - 0.4, 0.27, baseZ,
+            x + 0.4, 0.27, baseZ,
+            x,       0.27, apexZ
+        ]);
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
+        const color = ((col + (isTop ? 0 : 1)) % 2 === 0) ? 0xccaa00 : 0x883300;
+        boardGroup.add(new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color, side: THREE.DoubleSide })));
+    }
+}
+
+let lastMeshes = { points: {}, bar: { [WHITE]: [], [BLACK]: [] }, off: { [WHITE]: [], [BLACK]: [] } };
+
+function updateBoard3D() {
+    while (checkersGroup.children.length > 0) checkersGroup.remove(checkersGroup.children[0]);
+    lastMeshes = { points: {}, bar: { [WHITE]: [], [BLACK]: [] }, off: { [WHITE]: [], [BLACK]: [] } };
+
+    const checkerGeo = new THREE.CylinderGeometry(0.35, 0.35, 0.15, 32);
+    const whiteMat = new THREE.MeshPhongMaterial({ color: 0xeeeeee });
+    const blackMat = new THREE.MeshPhongMaterial({ color: 0x222222 });
+
+    // Checkers on points
+    game.board.forEach((p, i) => {
+        if (!p.color) return;
+        const { x, sign } = getPointLayout(i);
+        const spacing = p.count > 5 ? Math.min(0.75, 3.4 / (p.count - 1)) : 0.75;
+
+        for (let j = 0; j < p.count; j++) {
+            const checker = new THREE.Mesh(checkerGeo, p.color === WHITE ? whiteMat : blackMat);
+            const z = sign * (4.0 - j * spacing);
+            checker.position.set(x, 0.34, z);
+            checker.userData = { type: 'point', index: i };
+            checkersGroup.add(checker);
+            if (!lastMeshes.points[i]) lastMeshes.points[i] = [];
+            lastMeshes.points[i][j] = checker;
+        }
+    });
+
+    // Bar checkers (white on the near half, black on the far half)
+    [WHITE, BLACK].forEach(color => {
+        for (let j = 0; j < game.bar[color]; j++) {
+            const checker = new THREE.Mesh(checkerGeo, color === WHITE ? whiteMat : blackMat);
+            const sign = color === WHITE ? 1 : -1;
+            checker.position.set(0, 0.34, sign * (0.8 + j * 0.75));
+            checker.userData = { type: 'bar', color: color };
+            checkersGroup.add(checker);
+            lastMeshes.bar[color][j] = checker;
+        }
+    });
+
+    // Borne-off checkers lie flat in the trays
+    const offGeo = new THREE.BoxGeometry(1.0, 0.2, 0.2);
+    [WHITE, BLACK].forEach(color => {
+        for (let k = 0; k < game.off[color]; k++) {
+            const m = new THREE.Mesh(offGeo, color === WHITE ? whiteMat : blackMat);
+            m.position.copy(offSlotPos(color, k));
+            checkersGroup.add(m);
+            lastMeshes.off[color][k] = m;
+        }
+    });
+
+    $('#white-score').text(game.off[WHITE]);
+    $('#black-score').text(game.off[BLACK]);
+}
+
+// --- Move Animation ---
+let tweens = [];
+let animating = false;
+
+function pointSlotPos(i, j, count) {
+    const { x, sign } = getPointLayout(i);
+    const spacing = count > 5 ? Math.min(0.75, 3.4 / (count - 1)) : 0.75;
+    return new THREE.Vector3(x, 0.34, sign * (4.0 - j * spacing));
+}
+function barSlotPos(color, j) {
+    const sign = color === WHITE ? 1 : -1;
+    return new THREE.Vector3(0, 0.34, sign * (0.8 + j * 0.75));
+}
+function offSlotPos(color, k) {
+    k = k || 0;
+    // White tray = bottom right, Black tray = top right
+    const z = color === WHITE ? (4.15 - k * 0.27) : (-4.15 + k * 0.27);
+    return new THREE.Vector3(TRAY_X, 0.36, z);
+}
+
+function addTween(mesh, from, to, opts) {
+    opts = opts || {};
+    // Clone first: 'to' is often mesh.position itself, which copy(from) would overwrite
+    const fromPos = from.clone(), toPos = to.clone();
+    mesh.position.copy(fromPos);
+    tweens.push({
+        mesh, from: fromPos, to: toPos,
+        t0: performance.now() + (opts.delay || 0),
+        dur: opts.dur || 550,
+        lift: opts.lift === undefined ? 1.3 : opts.lift,
+        remove: !!opts.remove
+    });
+}
+
+function updateTweens() {
+    const now = performance.now();
+    tweens = tweens.filter(tw => {
+        if (now < tw.t0) return true;
+        let t = Math.min(1, (now - tw.t0) / tw.dur);
+        const e = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;   // ease in-out
+        tw.mesh.position.lerpVectors(tw.from, tw.to, e);
+        tw.mesh.position.y = 0.34 + (tw.to.y - 0.34) * e + Math.sin(Math.PI * t) * tw.lift;
+        if (t >= 1) {
+            tw.mesh.position.copy(tw.to);
+            if (tw.remove) checkersGroup.remove(tw.mesh);
+            return false;
+        }
+        return true;
+    });
+}
+
+// Plays a move on the game state AND animates the checker flying to its new place
+function playMove(from, to, die) {
+    const color = game.turn;
+
+    // Where the moving checker starts (top of its stack)
+    let startPos;
+    if (from === 'bar') {
+        startPos = barSlotPos(color, game.bar[color] - 1);
+    } else {
+        const c = game.board[from].count;
+        startPos = pointSlotPos(from, c - 1, c);
+    }
+
+    // Is a blot being hit?
+    let hitColor = null, hitStart = null;
+    if (to !== 'off') {
+        const t = game.board[to];
+        if (t.color && t.color !== color && t.count === 1) {
+            hitColor = t.color;
+            hitStart = pointSlotPos(to, 0, 1);
+        }
+    }
+
+    game.executeMove(from, to, die);
+    clearHints();
+    updateBoard3D();
+
+    const hasHit = !!hitColor;
+    if (to === 'off') {
+        const mesh = lastMeshes.off[color][game.off[color] - 1];
+        if (mesh) addTween(mesh, startPos, mesh.position);
+    } else {
+        const stack = lastMeshes.points[to];
+        const mesh = stack && stack[game.board[to].count - 1];
+        if (mesh) {
+            addTween(mesh, startPos, mesh.position, { delay: hasHit ? 200 : 0 });
+        }
+    }
+
+    if (hasHit) {
+        const bm = lastMeshes.bar[hitColor][game.bar[hitColor] - 1];
+        if (bm) addTween(bm, hitStart, bm.position, { dur: 650, lift: 1.8 });
+    }
+
+    animating = true;
+    setTimeout(() => { animating = false; }, hasHit ? 800 : 600);
+}
+
+// --- Dice colours + move hints ---
+const DIE_COLORS = ['#f59e0b', '#38bdf8'];   // first die = amber, second die = sky blue
+let currentHints = [];                        // legal moves of the selected checker: {from, to, die}
+let activeDiceValues = new Set();             // dice that the selected checker can use right now
+const textureCache = {};
+const BOARD_PLANE = new THREE.Plane(new THREE.Vector3(0, 1, 0), -0.3);
+
+function dieColor(v) {
+    return (game.dice[0] === v) ? DIE_COLORS[0] : DIE_COLORS[1];
+}
+
+function numberTexture(v, color) {
+    const key = v + color;
+    if (textureCache[key]) return textureCache[key];
+    const c = document.createElement('canvas');
+    c.width = c.height = 128;
+    const g = c.getContext('2d');
+    g.fillStyle = color;
+    g.beginPath(); g.arc(64, 64, 58, 0, Math.PI * 2); g.fill();
+    g.lineWidth = 8; g.strokeStyle = '#ffffff'; g.stroke();
+    g.fillStyle = '#111'; g.font = 'bold 80px sans-serif';
+    g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillText(String(v), 64, 70);
+    textureCache[key] = new THREE.CanvasTexture(c);
+    return textureCache[key];
+}
+
+function renderDice() {
+    const box = $('#dice-slots').empty();
+    if (game.movesRemaining.length === 0 || game.dice.length < 2) {
+        box.append($('<div class="die"></div>').text('?'), $('<div class="die"></div>').text('?'));
+        return;
+    }
+    const d = game.dice;
+    const slots = (d[0] === d[1]) ? [d[0], d[0], d[0], d[0]] : [d[0], d[1]];
+    const remaining = [...game.movesRemaining];
+    slots.forEach(v => {
+        const idx = remaining.indexOf(v);
+        const used = idx === -1;
+        if (!used) remaining.splice(idx, 1);
+        const col = dieColor(v);
+        const el = $('<div class="die"></div>').text(v).css('border-color', col);
+        if (used) {
+            el.addClass('used');
+        } else if (activeDiceValues.has(v)) {
+            el.addClass('active').css({ background: col, boxShadow: '0 0 16px ' + col });
+        }
+        box.append(el);
+    });
+}
+
+function clearHints() {
+    if (highlightsGroup) highlightsGroup.clear();
+    currentHints = [];
+    activeDiceValues = new Set();
+    renderDice();
+}
+
+function showMoveHints(fromIdx) {
+    clearHints();
+    currentHints = game.getMovesFrom(fromIdx);
+    activeDiceValues = new Set(currentHints.map(m => m.die));
+
+    // white ring on the selected checker
+    const p = botMarkPos(fromIdx, game.turn);
+    const ring = new THREE.Mesh(
+        new THREE.RingGeometry(0.42, 0.6, 40),
+        new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide })
+    );
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.set(p.x, 0.75, p.z);
+    highlightsGroup.add(ring);
+
+    // one coloured disc per destination, showing which die it uses
+    currentHints.forEach(m => {
+        const hint = new THREE.Mesh(
+            new THREE.PlaneGeometry(0.95, 0.95),
+            new THREE.MeshBasicMaterial({ map: numberTexture(m.die, dieColor(m.die)), transparent: true })
+        );
+        hint.rotation.set(-Math.PI / 2, 0, flipView ? Math.PI : 0);
+        if (m.to === 'off') {
+            hint.position.set(TRAY_X, 0.8, game.turn === WHITE ? 2.3 : -2.3);
+        } else {
+            const { x, sign } = getPointLayout(m.to);
+            hint.position.set(x, 0.8, sign * 3.9);
+        }
+        highlightsGroup.add(hint);
+    });
+    renderDice();
+}
+
+// Which part of the board is under a world position (x, z)?
+function zoneAt(x, z) {
+    if (x >= 6.5 && x <= 8.2) return { type: 'off', color: z > 0 ? WHITE : BLACK };
+    if (Math.abs(x) < 0.4) return { type: 'bar' };
+    if (x < -6.4 || x > 6.4) return null;
+    const col = x < 0 ? Math.max(0, Math.min(5, Math.round(x + 5.8)))
+                      : Math.max(6, Math.min(11, Math.round(x + 5.2)));
+    return { type: 'point', index: z < 0 ? 11 - col : 12 + col };
+}
+
+function performMove(m) {
+    if (gameMode === 'online') {
+        submitOnlineMove(m.from, m.to, m.die);
+    } else {
+        playMove(m.from, m.to, m.die);
+        updateUI();
+        checkNoMoves();
+    }
+}
+
+function handleTap(clientX, clientY) {
+    if (!gameMode || inputLocked() || animating) return;
+    const rect = renderer.domElement.getBoundingClientRect();
+    mouse.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+    mouse.y = -((clientY - rect.top) / rect.height) * 2 + 1;
+    raycaster.setFromCamera(mouse, camera);
+
+    const hit = new THREE.Vector3();
+    if (!raycaster.ray.intersectPlane(BOARD_PLANE, hit)) return;
+    const zone = zoneAt(hit.x, hit.z);
+    if (!zone) { clearHints(); return; }
+
+    // 1. Tapping a destination plays the move
+    const chosen = currentHints.find(m =>
+        zone.type === 'off' ? m.to === 'off' : (zone.type === 'point' && m.to === zone.index));
+    if (chosen) { performMove(chosen); return; }
+
+    // 2. Otherwise select a checker (checkers on the bar must move first)
+    if (game.bar[game.turn] > 0 && zone.type !== 'off') { showMoveHints('bar'); return; }
+    if (zone.type === 'point' && game.board[zone.index].color === game.turn) {
+        showMoveHints(zone.index);
+        return;
+    }
+    clearHints();
+}
+
+function onWindowResize() {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    fitCamera();
+}
+
+function updateUI() {
+    const turnBox = $('#turn-box');
+    const botMode = (gameMode === 'bot');
+    const online = (gameMode === 'online');
+    if (game.turn === WHITE) {
+        const txt = botMode ? "Your Turn (White)"
+                  : online ? (myColor === WHITE ? "Your Turn (White)" : "Opponent's Turn (White)")
+                  : "White's Turn";
+        turnBox.text(txt).removeClass('black-turn').addClass('white-turn');
+    } else {
+        const txt = botMode ? "Computer's Turn (Black)"
+                  : online ? (myColor === BLACK ? "Your Turn (Black)" : "Opponent's Turn (Black)")
+                  : "Black's Turn";
+        turnBox.text(txt).removeClass('white-turn').addClass('black-turn');
+    }
+
+    renderDice();
+    if (game.movesRemaining.length > 0) {
+        $('#roll-btn').prop('disabled', true).addClass('opacity-50 cursor-not-allowed');
+    } else {
+        const lock = inputLocked() || awaitingDice;
+        $('#roll-btn').prop('disabled', lock).toggleClass('opacity-50 cursor-not-allowed', lock);
+    }
+
+    // Win Check
+    if (game.off[WHITE] === 15) showMessage(online ? (myColor === WHITE ? "You Win!" : "You Lose!") : (botMode ? "You Win!" : "White Wins!"));
+    if (game.off[BLACK] === 15) showMessage(online ? (myColor === BLACK ? "You Win!" : "You Lose!") : (botMode ? "Computer Wins!" : "Black Wins!"));
+
+    // Let the computer play whenever it becomes its turn
+    if (isBotTurn() && !botBusy && !burnTimer) botTakeTurn();
+}
+
+function showMessage(txt) {
+    $('#message-box').text(txt).fadeIn().delay(3000).fadeOut();
+}
+
+// --- Interaction Events ---
+let burnTimer = null;
+
+// If the current player has dice left but cannot play any of them, burn the dice and pass the turn
+function checkNoMoves() {
+    if (burnTimer) return;
+    if (game.movesRemaining.length === 0) return;
+    if (game.hasAnyMove()) return;
+
+    showMessage("No possible moves!");
+    burnTimer = setTimeout(() => {
+        burnTimer = null;
+        game.movesRemaining = [];
+        game.turn = (game.turn === WHITE) ? BLACK : WHITE;
+        clearHints();
+        updateUI();
+    }, 1500);
+}
+
+$('#roll-btn').on('click', () => {
+    if (!gameMode || inputLocked() || awaitingDice) return;
+    if (game.movesRemaining.length !== 0) return;
+
+    botMarkGroup.clear();
+    botLog(null);
+
+    if (gameMode === 'online') {
+        submitOnlineRoll();
+        return;
+    }
+
+    playSound('dice');
+    game.rollDice();
+    updateUI();
+    checkNoMoves();
+});
+
+// --- Game Mode & Computer Player ---
+let gameMode = null;          // 'pvp' | 'bot'
+const BOT_COLOR = BLACK;
+let botBusy = false;
+
+function isGameOver() {
+    return game.off[WHITE] === 15 || game.off[BLACK] === 15;
+}
+
+function isBotTurn() {
+    return gameMode === 'bot' && game.turn === BOT_COLOR && !isGameOver();
+}
+
+// --- Online play through PHP API + MySQL (host = White, guest = Black) ---
+let isHost = false;
+let myColor = WHITE;
+let awaitingDice = false;
+let onlineStarted = false;
+
+function isOpponentTurn() {
+    return gameMode === 'online' && game.turn !== myColor;
+}
+
+function inputLocked() {
+    return isBotTurn() || isOpponentTurn() || isGameOver() || awaitingDice;
+}
+
+function setLobbyStatus(txt) {
+    $('#lobby-status').text(txt);
+}
+
+function resetOnline() {
+    stopOnlinePolling();
+    onlineRoom = null;
+    onlineToken = null;
+    lastServerState = null;
+    onlineStarted = false;
+    awaitingDice = false;
+    $('#room-code-box').hide();
+}
+
+async function createRoom() {
+    resetOnline();
+    isHost = true;
+    myColor = WHITE;
+    setLobbyStatus('در حال ساخت اتاق...');
+    try {
+        const data = await apiRequest('rooms/create');
+        onlineRoom = data.room_code;
+        onlineToken = data.player_token;
+        $('#room-code').text(onlineRoom);
+        $('#room-code-box').show();
+        setLobbyStatus('اتاق ساخته شد؛ منتظر ورود حریف...');
+        applyServerState(data.state);
+        startOnlinePolling();
+    } catch (error) {
+        setLobbyStatus(error.message);
+    }
+}
+
+async function joinRoom(code) {
+    code = (code || '').toUpperCase().trim();
+    if (code.length !== 5) {
+        setLobbyStatus('کد اتاق باید ۵ کاراکتر باشد.');
+        return;
+    }
+    resetOnline();
+    isHost = false;
+    myColor = BLACK;
+    setLobbyStatus('در حال ورود به اتاق...');
+    try {
+        const data = await apiRequest('rooms/join', { room_code: code });
+        onlineRoom = data.room_code;
+        onlineToken = data.player_token;
+        applyServerState(data.state);
+        setLobbyStatus('وارد اتاق شدی؛ بازی شروع می‌شود...');
+        onlineStarted = true;
+        startGame('online');
+        startOnlinePolling();
+    } catch (error) {
+        setLobbyStatus(error.message);
+    }
+}
+
+function scoreBotMove(m) {
+    const color = game.turn, opp = -color;
+    let score = Math.random() * 0.5 + m.die * 0.3;
+
+    if (m.from === 'bar') score += 2;
+    if (m.to === 'off') return score + 8;
+
+    const target = game.board[m.to];
+    if (target.color === opp && target.count === 1) {
+        // Hit: more valuable the further the opponent checker had travelled
+        const oppProgress = (opp === WHITE) ? m.to : (23 - m.to);
+        score += 10 + oppProgress * 0.2;
+    } else if (target.color === color) {
+        score += 3;               // safe: stack / make a point
+    } else {
+        score -= 3;               // lands alone on an empty point (blot)
+    }
+
+    // Leaving a lone checker behind is risky
+    if (m.from !== 'bar' && game.board[m.from].count === 2) score -= 3;
+
+    return score;
+}
+
+function chooseBotMove(moves) {
+    let best = moves[0], bestScore = -Infinity;
+    moves.forEach(m => {
+        const sc = scoreBotMove(m);
+        if (sc > bestScore) { bestScore = sc; best = m; }
+    });
+    return best;
+}
+
+function botLog(txt) {
+    if (txt) $('#bot-log').text(txt).show(); else $('#bot-log').hide();
+}
+
+function botMarkPos(where, color) {
+    if (where === 'bar') return { x: 0, z: (color === WHITE ? 1 : -1) * 0.8 };
+    if (where === 'off') return { x: TRAY_X, z: color === WHITE ? 2.3 : -2.3 };
+    const { x, sign } = getPointLayout(where);
+    return { x, z: sign * 3.9 };
+}
+
+function addBotMark(where, color, hex) {
+    const pos = botMarkPos(where, color);
+    const ring = new THREE.Mesh(
+        new THREE.RingGeometry(0.42, 0.62, 40),
+        new THREE.MeshBasicMaterial({ color: hex, side: THREE.DoubleSide })
+    );
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.set(pos.x, 0.75, pos.z);
+    botMarkGroup.add(ring);
+}
+
+function botTakeTurn() {
+    if (botBusy) return;
+    botBusy = true;
+    botMarkGroup.clear();
+    setTimeout(botStep, 1500);
+}
+
+function botStep() {
+    if (!isBotTurn()) { botBusy = false; return; }
+
+    // 1) Roll if needed
+    if (game.movesRemaining.length === 0) {
+        playSound('dice');
+        const d = game.rollDice();
+        updateUI();
+        botLog("Computer rolled " + d[0] + " and " + d[1]);
+        checkNoMoves();
+        if (burnTimer) { botBusy = false; return; }   // no legal move: dice get burned
+        setTimeout(botStep, 1800);
+        return;
+    }
+
+    // 2) Pick one move and show it before playing it
+    const moves = game.getAllMoves();
+    if (moves.length === 0) {
+        checkNoMoves();
+        botBusy = false;
+        return;
+    }
+
+    const m = chooseBotMove(moves);
+    addBotMark(m.from, BOT_COLOR, 0xff8800);   // orange = where the checker is leaving
+    addBotMark(m.to, BOT_COLOR, 0xffee00);     // yellow = where it lands
+    activeDiceValues = new Set([m.die]);       // colour the die the computer is playing
+    renderDice();
+    botLog("Computer plays a " + m.die);
+
+    setTimeout(() => {
+        if (!isBotTurn()) { botBusy = false; return; }
+        playMove(m.from, m.to, m.die);
+        updateUI();
+        checkNoMoves();
+        if (burnTimer) { botBusy = false; return; }
+        setTimeout(botStep, 1400);
+    }, 1400);
+}
+
+function startGame(mode) {
+    gameMode = mode;
+    if (mode === 'online') {
+        flipView = (myColor === BLACK);
+        fitCamera();
+        botLog(isHost ? 'Connected — you are White' : 'Connected — you are Black');
+    }
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    $('#menu-overlay').fadeOut(200);
+    updateUI();
+}
+
+$('#mode-pvp').on('click', (e) => { e.stopPropagation(); startGame('pvp'); });
+$('#mode-bot').on('click', (e) => { e.stopPropagation(); startGame('bot'); });
+$('#mode-online').on('click', (e) => {
+    e.stopPropagation();
+    $('.menu-card').first().hide();
+    $('#lobby-card').show();
+});
+$('#lobby-back').on('click', (e) => {
+    e.stopPropagation();
+    resetOnline();
+    setLobbyStatus('');
+    $('#lobby-card').hide();
+    $('.menu-card').first().show();
+});
+$('#create-room').on('click', (e) => { e.stopPropagation(); createRoom(); });
+$('#join-room').on('click', (e) => { e.stopPropagation(); joinRoom($('#join-code').val()); });
+$('#join-code').on('keydown', (e) => { if (e.key === 'Enter') joinRoom($('#join-code').val()); });
+$('#copy-code').on('click', (e) => {
+    e.stopPropagation();
+    const code = $('#room-code').text();
+    if (navigator.clipboard) navigator.clipboard.writeText(code);
+    $('#copy-code').text('کپی شد ✓');
+});
+$('#menu-btn').on('click', (e) => { e.stopPropagation(); location.reload(); });
+
+function animate() {
+    requestAnimationFrame(animate);
+    updateTweens();
+    renderer.render(scene, camera);
+}
+
+window.onload = () => {
+    init3D();
+    animate();
+    updateUI();
+};
+</script>
+</body>
+</html>

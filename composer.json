@@ -1,0 +1,15 @@
+{
+  "name": "backgammon/mvc",
+  "description": "3D Backgammon with JavaScript frontend and PHP/MySQL MVC backend",
+  "type": "project",
+  "require": {
+    "php": ">=8.1",
+    "ext-pdo": "*",
+    "ext-pdo_mysql": "*"
+  },
+  "autoload": {
+    "psr-4": {
+      "App\\": "app/"
+    }
+  }
+}
